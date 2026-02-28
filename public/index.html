@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chat Server Demo</title>
+    <script src="/socket.io/socket.io.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        input, textarea {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            box-sizing: border-box;
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            margin-right: 10px;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        .chat-container {
+            margin-top: 20px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            height: 400px;
+            overflow-y: auto;
+            padding: 10px;
+            background-color: #fafafa;
+        }
+        .message {
+            margin-bottom: 10px;
+            padding: 8px;
+            border-radius: 5px;
+            background-color: #e9ecef;
+        }
+        .message.own {
+            background-color: #007bff;
+            color: white;
+            text-align: right;
+        }
+        .status {
+            font-size: 12px;
+            color: #666;
+            font-style: italic;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>💬 Chat Server Demo</h1>
+        
+        <div class="form-group">
+            <label for="auth-token">Authentication Token (Optional):</label>
+            <input type="text" id="auth-token" placeholder="Enter JWT token for authenticated access">
+            <small>Leave empty for anonymous access, or enter a valid JWT token</small>
+        </div>
+        
+        <button onclick="setAuthToken()">Set Token</button>
+        <button onclick="clearAuthToken()">Clear Token</button>
+        <span id="token-status" style="margin-left: 10px; color: green;"></span>
+        
+        <hr style="margin: 20px 0;">
+        
+        <div class="form-group">
+            <label for="room-id">Room ID:</label>
+            <input type="text" id="room-id" placeholder="Enter room ID" value="general">
+        </div>
+        
+        <button onclick="joinRoom()">Join Room</button>
+        
+        <div class="chat-container" id="chat-messages">
+            <div class="status">Enter a room ID and click "Join Room" to start chatting...</div>
+        </div>
+        
+        <div class="form-group" style="margin-top: 15px;">
+            <textarea id="message-input" placeholder="Type your message here..." rows="3"></textarea>
+        </div>
+        
+        <button onclick="sendMessage()">Send Message</button>
+        <button onclick="clearChat()">Clear Chat</button>
+    </div>
+
+    <script>
+        let socket = null;
+        let currentRoomId = null;
+        let authToken = localStorage.getItem('chat_auth_token') || '';
+        
+        // Initialize socket connection
+        function initSocket() {
+            const options = {};
+            
+            // Add auth token if available
+            if (authToken) {
+                options.auth = { token: authToken };
+            }
+            
+            socket = io(options);
+            
+            // Socket event listeners
+            socket.on('receive-message', (message) => {
+                const chatContainer = document.getElementById('chat-messages');
+                const messageDiv = document.createElement('div');
+                messageDiv.className = 'message';
+                messageDiv.innerHTML = `
+                    <strong>Anonymous:</strong> ${message.content}
+                    <div style="font-size: 10px; opacity: 0.7;">${new Date(message.createdAt).toLocaleString()}</div>
+                `;
+                chatContainer.appendChild(messageDiv);
+                chatContainer.scrollTop = chatContainer.scrollHeight;
+            });
+
+            socket.on('error', (error) => {
+                alert('Error: ' + error.message);
+            });
+            
+            // Update token status display
+            updateTokenStatus();
+        }
+        
+        // Initialize on page load
+        window.onload = function() {
+            initSocket();
+            if (authToken) {
+                document.getElementById('auth-token').value = authToken;
+            }
+        };
+
+        // Token management functions
+        function setAuthToken() {
+            const tokenInput = document.getElementById('auth-token');
+            const newToken = tokenInput.value.trim();
+            
+            if (newToken) {
+                authToken = newToken;
+                localStorage.setItem('chat_auth_token', newToken);
+                document.getElementById('token-status').textContent = 'Token set! Reconnecting...';
+                
+                // Reconnect with new token
+                if (socket) {
+                    socket.disconnect();
+                }
+                initSocket();
+            } else {
+                clearAuthToken();
+            }
+        }
+        
+        function clearAuthToken() {
+            authToken = '';
+            localStorage.removeItem('chat_auth_token');
+            document.getElementById('auth-token').value = '';
+            document.getElementById('token-status').textContent = 'Token cleared! Reconnecting...';
+            
+            // Reconnect without token
+            if (socket) {
+                socket.disconnect();
+            }
+            initSocket();
+        }
+        
+        function updateTokenStatus() {
+            const statusElement = document.getElementById('token-status');
+            if (authToken) {
+                statusElement.textContent = '_authenticated_';
+                statusElement.style.color = 'green';
+            } else {
+                statusElement.textContent = 'anonymous mode';
+                statusElement.style.color = 'orange';
+            }
+        }
+        
+        // Join room
+        function joinRoom() {
+            const roomId = document.getElementById('room-id').value;
+            if (!roomId) {
+                alert('Please enter a room ID');
+                return;
+            }
+            
+            currentRoomId = roomId;
+            socket.emit('join-room', roomId);
+            document.getElementById('chat-messages').innerHTML = 
+                `<div class="status">Joined room: ${roomId}</div>`;
+        }
+
+        // Send message
+        function sendMessage() {
+            if (!currentRoomId) {
+                alert('Please join a room first');
+                return;
+            }
+            
+            const content = document.getElementById('message-input').value.trim();
+            if (!content) {
+                alert('Please enter a message');
+                return;
+            }
+            
+            // Send message without user ID since we're not using user authentication
+            socket.emit('send-message', {
+                content,
+                roomId: currentRoomId
+            });
+            
+            document.getElementById('message-input').value = '';
+        }
+
+        // Clear chat
+        function clearChat() {
+            document.getElementById('chat-messages').innerHTML = 
+                `<div class="status">Chat cleared</div>`;
+        }
+
+        // Socket event listeners
+        socket.on('receive-message', (message) => {
+            const chatContainer = document.getElementById('chat-messages');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = 'message';
+            messageDiv.innerHTML = `
+                <strong>Anonymous:</strong> ${message.content}
+                <div style="font-size: 10px; opacity: 0.7;">${new Date(message.createdAt).toLocaleString()}</div>
+            `;
+            chatContainer.appendChild(messageDiv);
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+        });
+
+        socket.on('error', (error) => {
+            alert('Error: ' + error.message);
+        });
+    </script>
+</body>
+</html>
