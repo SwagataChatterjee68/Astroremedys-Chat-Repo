@@ -1,115 +1,164 @@
 require('dotenv').config();
+
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const { PrismaClient } = require('@prisma/client');
-const { authenticateSocketToken } = require('./middleware/auth');
+
+// TEMP: comment auth for debugging
+// const { authenticateSocketToken } = require('./middleware/auth');
 
 const app = express();
 const server = http.createServer(app);
+
 const io = new Server(server, {
   cors: {
-    origin: "*", // Allow all origins for development
+    origin: "*",
     methods: ["GET", "POST"]
-  },
-  allowRequest: (req, callback) => {
-    // This will be handled by the authenticateSocketToken middleware
-    callback(null, true);
   }
 });
 
-// Initialize Prisma Client
+// Initialize Prisma
 const prisma = new PrismaClient();
 
 // Middleware
 app.use(express.json());
 app.use(express.static('public'));
 
-// Routes
+// Test route
 app.get('/', (req, res) => {
-  res.sendFile(__dirname + '/public/index.html');
+  res.send("Socket.IO server is running");
 });
 
-// Socket.IO connections with authentication
-io.use(authenticateSocketToken);
+// ===== DEBUG CONNECTION LOGGER =====
+io.on("connection", (socket) => {
 
-io.on('connection', (socket) => {
-  console.log('Authenticated user connected:', socket.id, socket.user);
+  console.log("=================================");
+  console.log("SOCKET CONNECTED");
+  console.log("Socket ID:", socket.id);
+  console.log("Handshake Query:", socket.handshake.query);
+  console.log("Handshake Auth:", socket.handshake.auth);
+  console.log("Client IP:", socket.handshake.address);
+  console.log("=================================");
 
   // Join room
   socket.on('join-room', (roomId) => {
+
+    console.log("JOIN ROOM EVENT RECEIVED");
+    console.log("Room ID:", roomId);
+
     socket.join(roomId);
+
     console.log(`User ${socket.id} joined room ${roomId}`);
   });
 
+  socket.on("mark-read", (data) => {
+  const { roomId, userId } = data;
+
+  console.log(`Mark read received from ${userId} in room ${roomId}`);
+
+  socket.to(roomId).emit("messages-read", {
+    roomId,
+    userId,
+  });
+});
+
   // Send message
-  socket.on('send-message', async (data) => {
+  socket.on('send-message', (data) => {
+
+    console.log("SEND MESSAGE EVENT RECEIVED");
+    console.log("DATA:", data);
+
     try {
-      const { content, roomId } = data;
-      
-      // Create message object without database save
+
       const message = {
-        content,
-        roomId,
-        createdAt: new Date(),
-        id: Date.now() // Simple ID generation
+        id: Date.now(),
+        content: data.content,
+        roomId: data.roomId,
+        senderId: data.senderId,
+        createdAt: new Date()
       };
 
-      // Broadcast to room
-      io.to(roomId).emit('receive-message', message);
-      console.log(`Message sent to room ${roomId}: ${content}`);
+      console.log("Constructed message object:", message);
+
+      console.log("Broadcasting message to room:", data.roomId);
+
+      io.to(data.roomId).emit('receive-message', message);
+
+      console.log("Message broadcasted successfully");
+
     } catch (error) {
-      console.error('Error sending message:', error);
-      socket.emit('error', { message: 'Failed to send message' });
+
+      console.log("ERROR SENDING MESSAGE:", error);
+
+      socket.emit('error', {
+        message: "Message send failed"
+      });
     }
   });
 
-  // Typing indicator
+  // Typing
   socket.on('typing', (data) => {
-    socket.to(data.roomId).emit('user-typing', {
-      userId: data.userId,
-      username: data.username,
-      isTyping: true
-    });
+
+    console.log("TYPING EVENT:", data);
+
+    socket.to(data.roomId).emit('user-typing', data);
   });
 
   socket.on('stop-typing', (data) => {
-    socket.to(data.roomId).emit('user-typing', {
-      userId: data.userId,
-      username: data.username,
-      isTyping: false
-    });
+
+    console.log("STOP TYPING EVENT:", data);
+
+    socket.to(data.roomId).emit('user-typing', data);
+  });
+
+  // Listen all events
+  socket.onAny((event, ...args) => {
+
+    console.log("EVENT RECEIVED:", event);
+    console.log("ARGS:", args);
+
   });
 
   // Disconnect
-  socket.on('disconnect', () => {
-    console.log('User disconnected:', socket.id);
+  socket.on('disconnect', (reason) => {
+
+    console.log("=================================");
+    console.log("SOCKET DISCONNECTED");
+    console.log("Socket ID:", socket.id);
+    console.log("Reason:", reason);
+    console.log("=================================");
+
   });
+
 });
 
-// Test database connection
+// DB test
 async function testDatabaseConnection() {
+
   try {
+
     await prisma.$connect();
-    console.log('✅ Connected to database successfully');
+
+    console.log("DATABASE CONNECTED SUCCESSFULLY");
+
   } catch (error) {
-    console.error('❌ Database connection failed:', error.message);
+
+    console.log("DATABASE CONNECTION FAILED:", error.message);
+
   }
+
 }
 
-// Graceful shutdown
-process.on('SIGINT', async () => {
-  console.log('\nShutting down gracefully...');
-  await prisma.$disconnect();
-  server.close(() => {
-    console.log('Server closed');
-    process.exit(0);
-  });
-});
-
+// Start server on all interfaces
 const PORT = process.env.PORT || 3002;
 
-server.listen(PORT, async () => {
-  console.log(`🚀 Server running on port ${PORT}`);
+server.listen(PORT, "0.0.0.0", async () => {
+
+  console.log("=================================");
+  console.log(`SERVER RUNNING ON PORT ${PORT}`);
+  console.log("=================================");
+
   await testDatabaseConnection();
+
 });
