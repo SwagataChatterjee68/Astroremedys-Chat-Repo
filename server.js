@@ -151,7 +151,7 @@ async function testDatabaseConnection() {
 }
 
 // Start server on all interfaces
-const PORT = process.env.PORT || 3002;
+const PORT = process.env.PORT || 3031;
 
 server.listen(PORT, "0.0.0.0", async () => {
 
