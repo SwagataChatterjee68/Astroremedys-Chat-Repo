@@ -1,0 +1,738 @@
+# Socket.IO Chat Server Documentation
+
+## Server Overview
+
+This is a real-time chat server built with Socket.IO, Express, and Prisma ORM connecting to a MySQL database. The server supports both anonymous and authenticated connections via JWT tokens.
+
+**Server Port:** 3031 (configurable via PORT environment variable)
+
+---
+
+## Table of Contents
+
+1. [Installation](#installation)
+2. [Configuration](#configuration)
+3. [Running the Server](#running-the-server)
+4. [Socket.IO Connection](#socketio-connection)
+5. [Socket Events](#socket-events)
+6. [Client Examples](#client-examples)
+7. [Database Schema](#database-schema)
+8. [Troubleshooting](#troubleshooting)
+
+---
+
+## Installation
+
+### Prerequisites
+- Node.js v16 or higher
+- npm or yarn
+- Access to MySQL database
+
+### Install Dependencies
+```bash
+npm install
+```
+
+### Installed Packages
+- `express` - Web framework
+- `socket.io` - Real-time communication
+- `@prisma/client` - Database ORM
+- `mysql2` - MySQL driver
+- `dotenv` - Environment variables
+- `jsonwebtoken` - JWT authentication (optional)
+- `bcryptjs` - Password hashing (optional)
+
+---
+
+## Configuration
+
+### Environment Variables (.env file)
+
+```env
+DB_CONNECTION=mysql
+DB_HOST=88.222.212.187
+DB_PORT=3306
+DB_DATABASE=astroremedys
+DB_USERNAME=astroremedys
+DB_PASSWORD=Z4umAIkrVSVPBid9ijgM
+PORT=3031
+
+# Prisma Database URL
+DATABASE_URL="mysql://astroremedys:Z4umAIkrVSVPBid9ijgM@88.222.212.187:3306/astroremedys"
+
+# JWT Secret (for authenticated mode)
+JWT_SECRET=your_jwt_secret_key_here
+```
+
+---
+
+## Running the Server
+
+### Start the Server
+```bash
+npm start
+```
+
+### Expected Output
+```
+=================================
+SERVER RUNNING ON PORT 3031
+=================================
+DATABASE CONNECTED SUCCESSFULLY
+```
+
+---
+
+## Socket.IO Connection
+
+### Basic Connection (Anonymous Mode)
+
+```javascript
+const socket = io('http://localhost:3031');
+
+// Or for remote server
+const socket = io('https://your-server.com');
+```
+
+### Authenticated Connection (JWT Mode)
+
+```javascript
+const socket = io('http://localhost:3031', {
+  auth: {
+    token: 'YOUR_JWT_TOKEN_HERE'
+  }
+});
+```
+
+### Connection with Token Management
+
+```javascript
+let authToken = localStorage.getItem('chat_auth_token') || '';
+
+function initSocket() {
+  const options = {};
+  
+  if (authToken) {
+    options.auth = { token: authToken };
+  }
+  
+  socket = io('http://localhost:3031', options);
+}
+```
+
+---
+
+## Socket Events
+
+### Client → Server Events
+
+#### 1. join-room
+Join a specific chat room/channel
+
+**Usage:**
+```javascript
+socket.emit('join-room', roomId);
+```
+
+**Parameters:**
+- `roomId` (String): The room identifier to join
+
+**Example:**
+```javascript
+socket.emit('join-room', 'general');
+socket.emit('join-room', 'support-room-123');
+```
+
+---
+
+#### 2. send-message
+Send a message to a room
+
+**Usage:**
+```javascript
+socket.emit('send-message', {
+  id: uniqueMessageId,
+  content: 'Your message text here',
+  roomId: 'target-room-id',
+  senderId: 'user-id-sending-message',
+  senderName: 'User Display Name',
+  receiverId: 'recipient-user-id', // optional
+  type: false // message type flag
+});
+```
+
+**Parameters:**
+- `id` (String/Number): Unique message identifier
+- `content` (String): The actual message content
+- `roomId` (String): Target room ID
+- `senderId` (String): ID of the user sending the message
+- `senderName` (String): Display name of the sender
+- `receiverId` (String, Optional): ID of message recipient
+- `type` (Boolean, Optional): Message type flag (default: false)
+
+**Example:**
+```javascript
+socket.emit('send-message', {
+  id: Date.now(),
+  content: 'Hello everyone!',
+  roomId: 'general',
+  senderId: 'user123',
+  senderName: 'John Doe',
+  type: false
+});
+```
+
+---
+
+#### 3. typing
+Indicate that user is typing in a room
+
+**Usage:**
+```javascript
+socket.emit('typing', {
+  roomId: 'room-id',
+  userId: 'user-id',
+  username: 'display-name',
+  isTyping: true
+});
+```
+
+**Parameters:**
+- `roomId` (String): Room where typing is happening
+- `userId` (String): ID of typing user
+- `username` (String): Display name of typing user
+- `isTyping` (Boolean): Typing status (true/false)
+
+**Example:**
+```javascript
+socket.emit('typing', {
+  roomId: 'general',
+  userId: 'user123',
+  username: 'John',
+  isTyping: true
+});
+```
+
+---
+
+#### 4. stop-typing
+Stop typing indication
+
+**Usage:**
+```javascript
+socket.emit('stop-typing', {
+  roomId: 'room-id',
+  userId: 'user-id',
+  username: 'display-name',
+  isTyping: false
+});
+```
+
+**Example:**
+```javascript
+socket.emit('stop-typing', {
+  roomId: 'general',
+  userId: 'user123',
+  username: 'John',
+  isTyping: false
+});
+```
+
+---
+
+#### 5. mark-read
+Mark messages as read in a room
+
+**Usage:**
+```javascript
+socket.emit('mark-read', {
+  roomId: 'room-id',
+  userId: 'user-id'
+});
+```
+
+**Example:**
+```javascript
+socket.emit('mark-read', {
+  roomId: 'general',
+  userId: 'user123'
+});
+```
+
+---
+
+### Server → Client Events
+
+#### 1. receive-message
+Receive a new message from the server
+
+**Event Data:**
+```javascript
+{
+  id: String,
+  content: String,
+  roomId: String,
+  senderId: String,
+  senderName: String,
+  receiverId: String,
+  type: Boolean
+}
+```
+
+**Listener Example:**
+```javascript
+socket.on('receive-message', (message) => {
+  console.log('New message received:', message);
+  
+  // Display in chat UI
+  displayMessage({
+    text: message.content,
+    sender: message.senderName,
+    timestamp: new Date().toLocaleString()
+  });
+});
+```
+
+---
+
+#### 2. user-typing
+Receive typing status update from other users
+
+**Event Data:**
+```javascript
+{
+  roomId: String,
+  userId: String,
+  username: String,
+  isTyping: Boolean
+}
+```
+
+**Listener Example:**
+```javascript
+socket.on('user-typing', (data) => {
+  if (data.isTyping) {
+    showTypingIndicator(data.username);
+  } else {
+    hideTypingIndicator(data.username);
+  }
+});
+```
+
+---
+
+#### 3. messages-read
+Notification that messages were marked as read
+
+**Event Data:**
+```javascript
+{
+  roomId: String,
+  userId: String
+}
+```
+
+**Listener Example:**
+```javascript
+socket.on('messages-read', (data) => {
+  console.log(`Messages in room ${data.roomId} read by user ${data.userId}`);
+  updateReadStatus(data.roomId, data.userId);
+});
+```
+
+---
+
+#### 4. error
+Error notifications from server
+
+**Listener Example:**
+```javascript
+socket.on('error', (error) => {
+  alert('Error: ' + error.message);
+  console.error('Socket error:', error);
+});
+```
+
+---
+
+## Client Examples
+
+### Complete HTML/JavaScript Example
+
+```html
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Chat Client</title>
+  <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+</head>
+<body>
+  <h1>Chat Room</h1>
+  <div id="messages"></div>
+  <input type="text" id="messageInput" placeholder="Type message...">
+  <button onclick="sendMessage()">Send</button>
+
+  <script>
+    // Connect to server
+    const socket = io('http://localhost:3031');
+
+    // Join room on connection
+    socket.on('connect', () => {
+      console.log('Connected to server');
+      socket.emit('join-room', 'general');
+    });
+
+    // Listen for messages
+    socket.on('receive-message', (message) => {
+      const msgDiv = document.createElement('div');
+      msgDiv.textContent = `${message.senderName}: ${message.content}`;
+      document.getElementById('messages').appendChild(msgDiv);
+    });
+
+    // Send message function
+    function sendMessage() {
+      const input = document.getElementById('messageInput');
+      
+      socket.emit('send-message', {
+        id: Date.now(),
+        content: input.value,
+        roomId: 'general',
+        senderId: 'user123',
+        senderName: 'Guest User',
+        type: false
+      });
+      
+      input.value = '';
+    }
+
+    // Handle errors
+    socket.on('error', (error) => {
+      console.error('Socket error:', error);
+    });
+  </script>
+</body>
+</html>
+```
+
+---
+
+### React Component Example
+
+```jsx
+import { useEffect, useState } from 'react';
+import io from 'socket.io-client';
+
+const ChatRoom = ({ roomId, userId, userName }) => {
+  const [socket, setSocket] = useState(null);
+  const [messages, setMessages] = useState([]);
+  const [inputText, setInputText] = useState('');
+
+  useEffect(() => {
+    // Initialize socket connection
+    const newSocket = io('http://localhost:3031');
+    
+    newSocket.on('connect', () => {
+      console.log('Connected to server');
+      newSocket.emit('join-room', roomId);
+    });
+
+    newSocket.on('receive-message', (message) => {
+      setMessages(prev => [...prev, message]);
+    });
+
+    setSocket(newSocket);
+
+    return () => {
+      newSocket.disconnect();
+    };
+  }, [roomId]);
+
+  const sendMessage = () => {
+    if (!inputText.trim()) return;
+
+    socket.emit('send-message', {
+      id: Date.now(),
+      content: inputText,
+      roomId: roomId,
+      senderId: userId,
+      senderName: userName,
+      type: false
+    });
+
+    setInputText('');
+  };
+
+  return (
+    <div>
+      <div className="messages-container">
+        {messages.map((msg, index) => (
+          <div key={index}>
+            <strong>{msg.senderName}:</strong> {msg.content}
+          </div>
+        ))}
+      </div>
+      <input 
+        value={inputText}
+        onChange={(e) => setInputText(e.target.value)}
+        placeholder="Type message..."
+      />
+      <button onClick={sendMessage}>Send</button>
+    </div>
+  );
+};
+
+export default ChatRoom;
+```
+
+---
+
+### Vue.js Component Example
+
+```vue
+<template>
+  <div class="chat-room">
+    <div class="messages">
+      <div v-for="(msg, index) in messages" :key="index">
+        <strong>{{ msg.senderName }}:</strong> {{ msg.content }}
+      </div>
+    </div>
+    <input v-model="inputText" @keyup.enter="sendMessage" placeholder="Type message..." />
+    <button @click="sendMessage">Send</button>
+  </div>
+</template>
+
+<script>
+import io from 'socket.io-client';
+
+export default {
+  props: ['roomId', 'userId', 'userName'],
+  data() {
+    return {
+      socket: null,
+      messages: [],
+      inputText: ''
+    };
+  },
+  mounted() {
+    this.socket = io('http://localhost:3031');
+    
+    this.socket.on('connect', () => {
+      console.log('Connected to server');
+      this.socket.emit('join-room', this.roomId);
+    });
+
+    this.socket.on('receive-message', (message) => {
+      this.messages.push(message);
+    });
+  },
+  methods: {
+    sendMessage() {
+      if (!this.inputText.trim()) return;
+
+      this.socket.emit('send-message', {
+        id: Date.now(),
+        content: this.inputText,
+        roomId: this.roomId,
+        senderId: this.userId,
+        senderName: this.userName,
+        type: false
+      });
+
+      this.inputText = '';
+    }
+  },
+  beforeDestroy() {
+    this.socket.disconnect();
+  }
+};
+</script>
+```
+
+---
+
+### Node.js CLI Client Example
+
+```javascript
+const io = require('socket.io-client');
+
+class ChatClient {
+  constructor(serverUrl, roomId, userId, userName) {
+    this.socket = io(serverUrl);
+    this.roomId = roomId;
+    this.userId = userId;
+    this.userName = userName;
+    
+    this.setupListeners();
+  }
+
+  setupListeners() {
+    this.socket.on('connect', () => {
+      console.log('✅ Connected to server');
+      this.socket.emit('join-room', this.roomId);
+    });
+
+    this.socket.on('receive-message', (message) => {
+      console.log(`[${message.senderName}]: ${message.content}`);
+    });
+
+    this.socket.on('user-typing', (data) => {
+      if (data.isTyping) {
+        console.log(`${data.username} is typing...`);
+      }
+    });
+
+    this.socket.on('error', (error) => {
+      console.error('❌ Error:', error.message);
+    });
+  }
+
+  sendMessage(content) {
+    this.socket.emit('send-message', {
+      id: Date.now(),
+      content: content,
+      roomId: this.roomId,
+      senderId: this.userId,
+      senderName: this.userName,
+      type: false
+    });
+  }
+
+  disconnect() {
+    this.socket.disconnect();
+  }
+}
+
+// Usage
+const client = new ChatClient(
+  'http://localhost:3031',
+  'general',
+  'user123',
+  'Test User'
+);
+
+// Send a message
+client.sendMessage('Hello from Node.js CLI!');
+
+// Keep connection open
+setTimeout(() => {
+  client.disconnect();
+}, 10000);
+```
+
+---
+
+## Database Schema
+
+The server uses Prisma ORM to interact with MySQL database. Messages are stored in the `chats` table.
+
+### Chats Table Structure
+
+Based on the server code, the `chats` table has these fields:
+
+- `id` - Primary key
+- `senderId` - ID of message sender
+- `senderName` - Display name of sender
+- `receiverId` - ID of message recipient
+- `message` - Message content
+- `type` - Message type flag
+- `created_at` - Timestamp when created
+- `updated_at` - Timestamp when updated
+
+---
+
+## Troubleshooting
+
+### Connection Issues
+
+**Problem:** Cannot connect to server
+```
+Solution:
+1. Verify server is running: Check terminal for "SERVER RUNNING ON PORT 3031"
+2. Check firewall settings
+3. Ensure correct server URL and port
+4. Try: telnet localhost 3031
+```
+
+**Problem:** Authentication failed
+```
+Solution:
+1. Verify JWT token is valid and not expired
+2. Check JWT_SECRET matches server configuration
+3. Ensure token is passed in socket.handshake.auth.token
+```
+
+### Message Sending Issues
+
+**Problem:** Messages not being sent
+```
+Solution:
+1. Check if joined a room first using socket.emit('join-room', roomId)
+2. Verify all required message fields are present
+3. Check server logs for errors
+4. Ensure database connection is working
+```
+
+**Problem:** Messages not appearing in UI
+```
+Solution:
+1. Verify socket.on('receive-message') listener is registered
+2. Check if in the correct room
+3. Inspect browser console for JavaScript errors
+4. Verify socket connection is active
+```
+
+### Debugging Tips
+
+Enable verbose logging by checking server console output. The server logs:
+- All socket connections/disconnections
+- All events received (using socket.onAny)
+- Message send attempts and results
+- Database operations
+
+**Server Debug Logs:**
+```
+=================================
+SOCKET CONNECTED
+Socket ID: abc123
+Handshake Query: {}
+Handshake Auth: { token: '...' }
+Client IP: ::1
+=================================
+```
+
+---
+
+## Security Considerations
+
+1. **Authentication**: Use JWT tokens for authenticated access
+2. **Authorization**: Validate user permissions before allowing actions
+3. **Input Validation**: Sanitize all user inputs (message content, room IDs)
+4. **Rate Limiting**: Implement rate limiting to prevent abuse
+5. **HTTPS**: Use WSS (WebSocket Secure) in production
+6. **CORS**: Configure appropriate CORS settings for your domain
+
+---
+
+## Performance Optimization
+
+1. **Connection Pooling**: Reuse socket connections
+2. **Room Management**: Clean up empty rooms periodically
+3. **Message Pagination**: Load messages in batches
+4. **Debouncing**: Debounce typing indicators
+5. **Compression**: Enable socket.io compression
+
+---
+
+## Support
+
+For issues or questions:
+- Check server logs for error messages
+- Review this documentation thoroughly
+- Test with the provided examples
+- Monitor network traffic using browser DevTools
+
+---
+
+**Last Updated:** February 27, 2026  
+**Server Version:** 1.0.0  
+**Socket.IO Version:** 4.x

@@ -70,17 +70,7 @@ io.on("connection", (socket) => {
     console.log("DATA:", data);
 
     try {
-      const message = {
-        id: data.id,
-        content: data.content,
-        roomId: data.roomId,
-        senderId: data.senderId,
-        senderName: data.senderName,
-        receiverId: data.receiverId,
-        type: data.type
-      };
-
-      console.log("Constructed message object:", message);
+      console.log("Constructed message object:", data);
 
       // Save message to database
       const savedMessage = await prisma.chats.create({
@@ -99,7 +89,7 @@ io.on("connection", (socket) => {
 
       console.log("Broadcasting message to room:", data.roomId);
 
-      io.to(data.roomId).emit('receive-message', message);
+      io.to(data.roomId).emit('receive-message', savedMessage);
 
       console.log("Message broadcasted successfully");
 
