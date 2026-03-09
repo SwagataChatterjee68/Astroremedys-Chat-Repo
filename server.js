@@ -23,7 +23,7 @@ const prisma = new PrismaClient();
 
 // Middleware
 app.use(express.json());
-app.use(express.static('public'));
+// app.use(express.static('public'));
 
 // Test route
 app.get('/', (req, res) => {
