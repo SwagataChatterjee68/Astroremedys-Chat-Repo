@@ -76,9 +76,8 @@ io.on("connection", (socket) => {
         roomId: data.roomId,
         senderId: data.senderId,
         senderName: data.senderName,
-        createdAt: new Date(),
         receiverId: data.receiverId,
-        type: data.type || false,
+        type: data.type
       };
 
       console.log("Constructed message object:", message);
@@ -91,12 +90,12 @@ io.on("connection", (socket) => {
           receiverId: data.receiverId,
           message: data.content,
           type: data.type || false,
-          created_at: new Date(),
-          updated_at: new Date(),
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
         },
       });
 
-      console.log("Message saved to DB with ID:", savedMessage.id.toString());
+      console.log("Message saved to DB with ID:", savedMessage);
 
       console.log("Broadcasting message to room:", data.roomId);
 
