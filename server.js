@@ -53,33 +53,50 @@ io.on("connection", (socket) => {
   });
 
   socket.on("mark-read", (data) => {
-  const { roomId, userId } = data;
+    const { roomId, userId } = data;
 
-  console.log(`Mark read received from ${userId} in room ${roomId}`);
+    console.log(`Mark read received from ${userId} in room ${roomId}`);
 
-  socket.to(roomId).emit("messages-read", {
-    roomId,
-    userId,
+    socket.to(roomId).emit("messages-read", {
+      roomId,
+      userId,
+    });
   });
-});
 
   // Send message
-  socket.on('send-message', (data) => {
+  socket.on('send-message', async (data) => {
 
     console.log("SEND MESSAGE EVENT RECEIVED");
     console.log("DATA:", data);
 
     try {
-
       const message = {
-        id: Date.now(),
+        id: data.id,
         content: data.content,
         roomId: data.roomId,
         senderId: data.senderId,
-        createdAt: new Date()
+        senderName: data.senderName,
+        createdAt: new Date(),
+        receiverId: data.receiverId,
+        type: data.type || false,
       };
 
       console.log("Constructed message object:", message);
+
+      // Save message to database
+      const savedMessage = await prisma.chats.create({
+        data: {
+          senderId: data.senderId,
+          senderName: data.senderName,
+          receiverId: data.receiverId,
+          message: data.content,
+          type: data.type || false,
+          created_at: new Date(),
+          updated_at: new Date(),
+        },
+      });
+
+      console.log("Message saved to DB with ID:", savedMessage.id.toString());
 
       console.log("Broadcasting message to room:", data.roomId);
 
