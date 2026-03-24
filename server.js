@@ -23,7 +23,7 @@ const prisma = new PrismaClient();
 
 // Middleware
 app.use(express.json());
-app.use(express.static('public'));
+// app.use(express.static('public'));
 
 // Test route
 app.get('/', (req, res) => {
@@ -53,37 +53,43 @@ io.on("connection", (socket) => {
   });
 
   socket.on("mark-read", (data) => {
-  const { roomId, userId } = data;
+    const { roomId, userId } = data;
 
-  console.log(`Mark read received from ${userId} in room ${roomId}`);
+    console.log(`Mark read received from ${userId} in room ${roomId}`);
 
-  socket.to(roomId).emit("messages-read", {
-    roomId,
-    userId,
+    socket.to(roomId).emit("messages-read", {
+      roomId,
+      userId,
+    });
   });
-});
 
   // Send message
-  socket.on('send-message', (data) => {
+  socket.on('send-message', async (data) => {
 
     console.log("SEND MESSAGE EVENT RECEIVED");
     console.log("DATA:", data);
 
     try {
+      console.log("Constructed message object:", data);
 
-      const message = {
-        id: Date.now(),
-        content: data.content,
-        roomId: data.roomId,
-        senderId: data.senderId,
-        createdAt: new Date()
-      };
+      // Save message to database
+      const savedMessage = await prisma.chats.create({
+        data: {
+          senderId: data.senderId,
+          senderName: data.senderName,
+          receiverId: data.receiverId,
+          message: data.content,
+          type: data.type || false,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        },
+      });
 
-      console.log("Constructed message object:", message);
+      console.log("Message saved to DB with ID:", savedMessage);
 
       console.log("Broadcasting message to room:", data.roomId);
 
-      io.to(data.roomId).emit('receive-message', message);
+      io.to(data.roomId).emit('receive-message', savedMessage);
 
       console.log("Message broadcasted successfully");
 
@@ -151,7 +157,7 @@ async function testDatabaseConnection() {
 }
 
 // Start server on all interfaces
-const PORT = process.env.PORT || 3002;
+const PORT = process.env.PORT || 3031;
 
 server.listen(PORT, "0.0.0.0", async () => {
 
