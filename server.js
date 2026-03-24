@@ -69,7 +69,7 @@ io.on("connection", (socket) => {
         try {
             console.log("Constructed message object:", data);
 
-            const receiverId = data.roomId.split("-")[1];
+            const receiverId = data.roomId.split("_")[1];
 
             // 2. Find if the user is an astrologer or not
             const astrologer = await prisma.astrologers.findFirst({
